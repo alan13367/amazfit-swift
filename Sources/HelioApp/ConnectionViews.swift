@@ -14,7 +14,7 @@ struct ConnectionSheet: View {
     var body: some View {
         VStack(alignment: .leading, spacing: 20) {
             HStack {
-                Image(systemName: "link").foregroundStyle(.mint).font(.title2)
+                Image(systemName: "link").foregroundStyle(Palette.accent).font(.title2)
                 Text("Connect your Zepp account").font(.title2.weight(.semibold))
                 Spacer()
             }
@@ -56,7 +56,7 @@ struct ConnectionSheet: View {
                 .buttonStyle(.borderedProminent).keyboardShortcut(.defaultAction)
                 .disabled(store.isBusy || !consent || (manualEntry && (token.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty || userID.isEmpty)))
             }
-        }.padding(28).frame(width: 650).tint(.mint).preferredColorScheme(.dark)
+        }.padding(28).frame(width: 650).tint(Palette.accent).preferredColorScheme(.dark)
             .interactiveDismissDisabled(store.isBusy)
             .onAppear { userID = store.credentials?.userID ?? ""; region = store.credentials?.region ?? .us }
             .onDisappear { token = "" }
@@ -73,28 +73,45 @@ struct ConnectionSettings: View {
     @Bindable var store: AppStore
     @State private var confirmDisconnect = false
     var body: some View {
-        VStack(alignment: .leading, spacing: 20) {
-            Panel(title: "Zepp account", subtitle: "The session token stays in macOS Keychain. Network requests go only to your selected Zepp regional host.") {
+        VStack(alignment: .leading, spacing: 18) {
+            Card(title: "Zepp account", symbol: "person.crop.circle.fill", tint: Palette.accent,
+                 subtitle: "Your session stays in macOS Keychain. Requests go only to your Zepp region's host.") {
                 if let credentials = store.credentials {
-                    LabeledContent("User ID", value: credentials.userID)
-                    LabeledContent("Region", value: credentials.region.title)
-                    LabeledContent("Host", value: credentials.region.baseURL.host ?? "")
+                    Grid(alignment: .leading, horizontalSpacing: 24, verticalSpacing: 10) {
+                        row("User ID", credentials.userID)
+                        row("Region", credentials.region.title)
+                        row("Host", credentials.region.baseURL.host ?? "")
+                        if let snapshot = store.snapshot, !store.isDemo {
+                            row("Downloaded", "\(Format.shortDay(snapshot.startDate)) – \(Format.shortDay(snapshot.endDate)) · \(snapshot.fetchedAt.formatted(date: .abbreviated, time: .shortened))")
+                            row("Device", "\(store.deviceName) · \(store.selectedSource)")
+                        }
+                    }
                     HStack {
                         Button("Update session…") { store.error = nil; store.showConnection = true }.disabled(store.isBusy)
                         Button("Disconnect & delete local data", role: .destructive) { confirmDisconnect = true }.disabled(store.isBusy)
                     }
+                    .padding(.top, 4)
                 } else {
                     Text("No account connected.").foregroundStyle(.secondary)
-                    Button("Connect Zepp account…") { store.error = nil; store.showConnection = true }.disabled(store.isBusy)
+                    Button("Connect Zepp account…") { store.error = nil; store.showConnection = true }
+                        .buttonStyle(.borderedProminent).disabled(store.isBusy)
                 }
             }
-            Notice(title: "What stays on this Mac", message: "Downloaded records are cached in ~/Library/Application Support/Helio/snapshot.json with owner-only file permissions and excluded from normal backup. This cache is not separately encrypted. Use FileVault to protect your disk. Disconnecting removes the saved session and cache, but not files you exported yourself.", symbol: "internaldrive", color: .mint)
-            Notice(title: "Cloud coverage", message: "Heart rate, sleep, steps, stress, and training-load formats are community-documented. Availability depends on your account, firmware, and monitoring settings. HRV, BioCharge/readiness, SpO₂, and respiratory rate are not mapped. Other Zepp devices can contribute to account-level event responses.", symbol: "info.circle", color: .mint)
-            Link("Official Zepp data export and privacy support", destination: URL(string: "https://www.zepp.com/privacy-support")!)
+            Banner(title: "What stays on this Mac", message: "Downloaded records are cached in ~/Library/Application Support/Helio/snapshot.json with owner-only permissions and excluded from backups. The cache isn't separately encrypted, so use FileVault. Disconnecting removes the saved session and cache, but not files you exported.", symbol: "internaldrive.fill")
+            Banner(title: "Cloud coverage", message: "Heart rate, sleep, steps, stress, workouts, and training load come from community-documented endpoints. HRV, BioCharge/readiness, SpO₂, and respiratory rate don't have a verified route yet. Other Zepp devices can appear in account-level responses.", symbol: "icloud.fill")
+            Link("Official Zepp data export and privacy support", destination: URL(string: "https://www.zepp.com/privacy-support")!).font(.callout)
         }
         .confirmationDialog("Delete the saved Zepp session and downloaded data?", isPresented: $confirmDisconnect, titleVisibility: .visible) {
             Button("Disconnect & delete", role: .destructive) { Task { await store.disconnect() } }
             Button("Cancel", role: .cancel) {}
         } message: { Text("Exported files remain where you saved them.") }
+    }
+
+    private func row(_ title: String, _ value: String) -> some View {
+        GridRow {
+            Text(title).foregroundStyle(.secondary)
+            Text(value).textSelection(.enabled).monospacedDigit()
+        }
+        .font(.callout)
     }
 }

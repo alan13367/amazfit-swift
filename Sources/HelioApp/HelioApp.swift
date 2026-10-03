@@ -1,7 +1,9 @@
 import SwiftUI
+import AppKit
 
 @main
 struct HelioApp: App {
+    @NSApplicationDelegateAdaptor private var delegate: AppDelegate
     @State private var store = AppStore()
     var body: some Scene {
         WindowGroup {
@@ -29,6 +31,15 @@ struct HelioApp: App {
         }
         Settings {
             ConnectionSettings(store: store).padding(28).frame(width: 520)
+        }
+    }
+}
+
+final class AppDelegate: NSObject, NSApplicationDelegate {
+    func applicationDidFinishLaunching(_ notification: Notification) {
+        // Set the Dock tile from the bundled icon directly, so a stale system icon cache can't show an old one.
+        if let url = Bundle.main.url(forResource: "Helio", withExtension: "icns"), let icon = NSImage(contentsOf: url) {
+            NSApplication.shared.applicationIconImage = icon
         }
     }
 }

@@ -1,164 +1,289 @@
 import SwiftUI
 import HelioCore
 
-private enum Screen: String, CaseIterable, Identifiable {
-    case overview, heart, sleep, activity, cloud, connection
-    var id: String { rawValue }
-    var title: String {
-        switch self {
-        case .overview: "Overview"
-        case .heart: "Heart & stress"
-        case .sleep: "Sleep"
-        case .activity: "Activity & load"
-        case .cloud: "All cloud fields"
-        case .connection: "Connection"
+struct ContentView: View {
+    @Bindable var store: AppStore
+
+    var body: some View {
+        NavigationSplitView {
+            Sidebar(store: store)
+                .navigationSplitViewColumnWidth(min: 220, ideal: 236, max: 280)
+        } detail: {
+            ScrollView {
+                VStack(alignment: .leading, spacing: 20) {
+                    header
+                    notices
+                    screenContent
+                    footer
+                }
+                .padding(.horizontal, 32).padding(.top, 22).padding(.bottom, 28)
+                .frame(maxWidth: 1240, alignment: .leading)
+                .frame(maxWidth: .infinity)
+            }
+            .background(Palette.background)
+        }
+        .tint(Palette.accent)
+        .preferredColorScheme(.dark)
+        .toolbar { toolbar }
+        .sheet(isPresented: $store.showConnection) { ConnectionSheet(store: store) }
+    }
+
+    private var screen: Screen { store.screen ?? .today }
+
+    @ViewBuilder private var screenContent: some View {
+        if screen == .account { ConnectionSettings(store: store) }
+        else if store.snapshot == nil { WelcomeView(store: store) }
+        else {
+            switch screen {
+            case .today: TodayView(store: store)
+            case .heart: HeartView(store: store)
+            case .sleep: SleepView(store: store)
+            case .stress: StressView(store: store)
+            case .activity: ActivityView(store: store)
+            case .workouts: WorkoutsView(store: store)
+            case .data: RawDataView(store: store)
+            case .account: EmptyView()
+            }
         }
     }
-    var icon: String {
-        switch self {
-        case .overview: "square.grid.2x2"
-        case .heart: "heart"
-        case .sleep: "moon"
-        case .activity: "figure.walk"
-        case .cloud: "curlybraces"
-        case .connection: "link"
+
+    private var header: some View {
+        VStack(alignment: .leading, spacing: 16) {
+            HStack(alignment: .lastTextBaseline) {
+                VStack(alignment: .leading, spacing: 4) {
+                    HStack(spacing: 8) {
+                        Image(systemName: screen.symbol).foregroundStyle(screen.tint).font(.system(size: 13, weight: .semibold))
+                        Eyebrow(text: screen.title)
+                    }
+                    Text(headline).font(.system(size: 30, weight: .bold)).lineLimit(1)
+                }
+                Spacer()
+                if store.snapshot != nil && screen.isDaily { DateStepper(store: store) }
+            }
+            if store.snapshot != nil && screen.isDaily && store.deviceDays.count > 1 { DayStrip(store: store) }
+        }
+    }
+
+    private var headline: String {
+        guard store.snapshot != nil, screen.isDaily, !store.selectedDate.isEmpty else {
+            switch screen {
+            case .workouts: return "Workouts"
+            case .data: return "Raw cloud data"
+            case .account: return "Zepp account"
+            default: return "Welcome to Helio"
+            }
+        }
+        return Format.relativeDay(store.selectedDate)
+    }
+
+    @ViewBuilder private var notices: some View {
+        if store.isDemo {
+            HStack(spacing: 12) {
+                Image(systemName: "sparkles").foregroundStyle(Palette.accent)
+                Text("You're viewing sample data, not readings from your strap.").font(.callout)
+                Spacer()
+                Button("Exit sample data") { Task { await store.leaveDemo() } }.disabled(store.isBusy)
+            }
+            .padding(12)
+            .background(Palette.accent.opacity(0.1), in: RoundedRectangle(cornerRadius: 12, style: .continuous))
+        }
+        if let error = store.error {
+            Banner(title: "Something needs attention", message: error, symbol: "exclamationmark.triangle.fill", tint: Palette.workout)
+        }
+    }
+
+    private var footer: some View {
+        HStack(spacing: 8) {
+            Image(systemName: store.isBusy ? "arrow.triangle.2.circlepath" : "internaldrive").font(.caption)
+            Text(store.status).font(.caption)
+            Spacer()
+            Text("Independent of Amazfit and Zepp · Not medical advice").font(.caption2)
+        }
+        .foregroundStyle(.tertiary)
+        .padding(.top, 8)
+    }
+
+    @ToolbarContentBuilder private var toolbar: some ToolbarContent {
+        ToolbarItemGroup {
+            if store.isBusy {
+                ProgressView().controlSize(.small)
+                Button("Cancel") { store.cancel() }
+            } else {
+                Picker("Download range", selection: $store.syncDays) {
+                    Text("7 days").tag(7); Text("14 days").tag(14); Text("30 days").tag(30)
+                }
+                .frame(width: 100)
+                .help("How many recent days to download")
+                Button { store.sync() } label: { Label("Sync", systemImage: "arrow.triangle.2.circlepath") }
+                    .disabled(!store.isConnected).help("Download recent data from Zepp (⌘R)")
+            }
+            Button { store.export() } label: { Label("Export", systemImage: "square.and.arrow.up") }
+                .disabled(store.snapshot == nil).help("Export downloaded data as JSON")
         }
     }
 }
 
-struct ContentView: View {
+private struct Sidebar: View {
     @Bindable var store: AppStore
-    @State private var selection: Screen? = .overview
+    private let sections: [(String, [Screen])] = [("", [.today]), ("Health", [.heart, .sleep, .stress]),
+                                                  ("Fitness", [.activity, .workouts]), ("Data", [.data, .account])]
+
     var body: some View {
-        NavigationSplitView {
-            VStack(spacing: 0) {
+        VStack(spacing: 0) {
+            HStack(spacing: 10) {
+                Image(nsImage: NSApplication.shared.applicationIconImage).resizable().frame(width: 38, height: 38).padding(-3)
+                VStack(alignment: .leading, spacing: 0) {
+                    Text("Helio").font(.system(size: 17, weight: .bold))
+                    Text("for Mac").font(.caption2).foregroundStyle(.secondary)
+                }
+                Spacer()
+            }
+            .padding(.horizontal, 18).padding(.top, 6).padding(.bottom, 10)
+
+            List(selection: $store.screen) {
+                ForEach(sections, id: \.0) { title, screens in
+                    Section {
+                        ForEach(screens) { screen in
+                            Label {
+                                Text(screen.title)
+                            } icon: {
+                                Image(systemName: screen.symbol).foregroundStyle(screen.tint)
+                            }
+                            .tag(screen)
+                        }
+                    } header: { if !title.isEmpty { Text(title) } }
+                }
+            }
+            .listStyle(.sidebar)
+
+            DeviceCard(store: store).padding(12)
+        }
+    }
+}
+
+private struct DeviceCard: View {
+    @Bindable var store: AppStore
+    var body: some View {
+        VStack(alignment: .leading, spacing: 10) {
+            if store.isConnected || store.snapshot != nil {
                 HStack(spacing: 10) {
-                    Image(systemName: "waveform.path.ecg").font(.title).foregroundStyle(.mint)
-                    VStack(alignment: .leading, spacing: 2) {
-                        Text("Helio").font(.title2.weight(.semibold))
-                        Text("YOUR HEALTH, ON MAC").font(.system(size: 9, weight: .medium)).tracking(1.3).foregroundStyle(.secondary)
+                    Image(systemName: "sensor.tag.radiowaves.forward.fill").foregroundStyle(Palette.accent)
+                    VStack(alignment: .leading, spacing: 1) {
+                        Text(store.isDemo ? "Sample strap" : store.deviceName).font(.callout.weight(.semibold))
+                        Text(syncText).font(.caption2).foregroundStyle(.secondary)
                     }
                     Spacer()
-                }.padding(20)
-                List(Screen.allCases, selection: $selection) { screen in
-                    Label(screen.title, systemImage: screen.icon).tag(screen).padding(.vertical, 5)
-                }.listStyle(.sidebar)
-                VStack(alignment: .leading, spacing: 12) {
-                    Label(store.isConnected ? "Zepp session saved" : "No account connected", systemImage: store.isConnected ? "checkmark.shield" : "lock")
-                        .font(.caption).foregroundStyle(.secondary)
-                    Button(store.isConnected ? "Update connection" : "Connect Zepp account") { store.showConnection = true }
-                        .buttonStyle(.borderedProminent).disabled(store.isBusy)
-                    Button("Explore sample data") { store.showDemo(); selection = .overview }
-                        .buttonStyle(.plain).font(.caption).disabled(store.isBusy)
-                }.padding(20).frame(maxWidth: .infinity, alignment: .leading)
-            }.navigationSplitViewColumnWidth(min: 210, ideal: 230, max: 270)
-        } detail: {
-            ScrollView {
-                VStack(alignment: .leading, spacing: 24) {
-                    header
-                    if store.isDemo {
-                        HStack {
-                            Label("Sample data. Not readings from your strap.", systemImage: "eye").font(.callout.weight(.medium))
-                            Spacer()
-                            Button("Exit sample data") { Task { await store.leaveDemo() } }.disabled(store.isBusy)
-                        }.padding(14).background(.mint.opacity(0.12), in: RoundedRectangle(cornerRadius: 10))
-                    }
-                    if let error = store.error {
-                        Notice(title: "Something needs attention", message: error, symbol: "exclamationmark.triangle", color: .orange)
-                    }
-                    if let snapshot = store.snapshot, !snapshot.warnings.isEmpty {
-                        Notice(title: "Cloud connection notes", message: snapshot.warnings.joined(separator: "\n"), symbol: "icloud.slash", color: .orange)
-                    }
-                    if selection == .connection { ConnectionSettings(store: store) }
-                    else if store.snapshot == nil { welcome }
-                    else {
-                        if selection != .cloud { selectors }
-                        switch selection ?? .overview {
-                        case .overview: OverviewView(store: store)
-                        case .heart: HeartView(store: store)
-                        case .sleep: SleepView(store: store)
-                        case .activity: ActivityView(store: store)
-                        case .cloud: CloudFieldsView(store: store)
-                        case .connection: EmptyView()
-                        }
-                    }
-                    VStack(alignment: .leading, spacing: 6) {
-                        Divider()
-                        Label(store.status, systemImage: store.isBusy ? "arrow.down.circle" : "internaldrive").font(.caption).foregroundStyle(.secondary)
-                        Text("Helio is independent of Amazfit and Zepp. Data shown here is not medical advice.").font(.caption2).foregroundStyle(.secondary)
-                    }
-                }.padding(28).frame(maxWidth: 1160, alignment: .leading).frame(maxWidth: .infinity)
-            }.background(Color(nsColor: .windowBackgroundColor))
-        }
-        .tint(.mint).preferredColorScheme(.dark)
-        .toolbar {
-            ToolbarItemGroup {
-                if store.isBusy {
-                    ProgressView().controlSize(.small)
-                    Button("Cancel") { store.cancel() }
-                } else {
-                    Picker("Download range", selection: $store.syncDays) {
-                        Text("7 days").tag(7); Text("14 days").tag(14); Text("30 days").tag(30)
-                    }.frame(width: 110)
-                    Button { store.sync() } label: { Label("Sync", systemImage: "arrow.clockwise") }
-                        .disabled(!store.isConnected).help("Download recent data from Zepp")
                 }
-                Button { store.export() } label: { Label("Export", systemImage: "square.and.arrow.up") }
-                    .disabled(store.snapshot == nil).help("Export cloud data as JSON")
+                if store.isConnected {
+                    Button { store.sync() } label: {
+                        Label(store.isBusy ? "Syncing…" : "Sync now", systemImage: "arrow.triangle.2.circlepath").frame(maxWidth: .infinity)
+                    }
+                    .controlSize(.regular).disabled(store.isBusy)
+                }
+            }
+            if !store.isConnected {
+                Button("Connect Zepp account") { store.showConnection = true }
+                    .buttonStyle(.borderedProminent).frame(maxWidth: .infinity).disabled(store.isBusy)
+                if store.snapshot == nil {
+                    Button("Explore sample data") { store.showDemo(); store.screen = .today }
+                        .buttonStyle(.plain).font(.caption).foregroundStyle(.secondary).disabled(store.isBusy)
+                }
             }
         }
-        .sheet(isPresented: $store.showConnection) { ConnectionSheet(store: store) }
+        .padding(12)
+        .background(Color.white.opacity(0.04), in: RoundedRectangle(cornerRadius: 12, style: .continuous))
     }
+    private var syncText: String {
+        guard let snapshot = store.snapshot else { return "Not synced yet" }
+        let when = snapshot.fetchedAt.formatted(.relative(presentation: .named))
+        return "Synced \(when)"
+    }
+}
 
-    private var header: some View {
-        HStack(alignment: .top) {
-            VStack(alignment: .leading, spacing: 6) {
-                Text((selection ?? .overview).title).font(.system(size: 30, weight: .semibold))
-                Text(subtitle).foregroundStyle(.secondary)
+private struct DateStepper: View {
+    @Bindable var store: AppStore
+    var body: some View {
+        HStack(spacing: 2) {
+            Button { store.step(-1) } label: { Image(systemName: "chevron.left").frame(width: 26, height: 24) }
+                .disabled(!store.canGoBack).keyboardShortcut(.leftArrow, modifiers: [.command])
+            Menu {
+                ForEach(store.deviceDays.reversed()) { day in
+                    Button(Format.longDay(day.date)) { store.selectedDate = day.date }
+                }
+            } label: {
+                Text(Format.shortDay(store.selectedDate)).font(.callout.weight(.medium)).monospacedDigit()
             }
-            Spacer()
-            if let snapshot = store.snapshot {
-                VStack(alignment: .trailing, spacing: 4) {
-                    Text(store.isDemo ? "SAMPLE DATA" : "LAST DOWNLOAD").font(.system(size: 10, weight: .semibold)).tracking(1).foregroundStyle(.secondary)
-                    Text(snapshot.fetchedAt.formatted(date: .abbreviated, time: .shortened)).font(.caption).monospacedDigit()
+            .menuStyle(.borderlessButton).fixedSize()
+            Button { store.step(1) } label: { Image(systemName: "chevron.right").frame(width: 26, height: 24) }
+                .disabled(!store.canGoForward).keyboardShortcut(.rightArrow, modifiers: [.command])
+        }
+        .buttonStyle(.plain)
+        .padding(.horizontal, 6).padding(.vertical, 4)
+        .background(Palette.card, in: Capsule())
+        .overlay(Capsule().strokeBorder(Palette.hairline))
+        .help("Previous or next day (⌘← / ⌘→)")
+    }
+}
+
+/// One chip per downloaded day, with a small ring for the day's step goal.
+private struct DayStrip: View {
+    @Bindable var store: AppStore
+    var body: some View {
+        ScrollViewReader { proxy in
+            ScrollView(.horizontal, showsIndicators: false) {
+                HStack(spacing: 8) {
+                    ForEach(store.deviceDays) { day in
+                        let selected = day.date == store.selectedDate
+                        Button { store.selectedDate = day.date } label: {
+                            VStack(spacing: 6) {
+                                Text(Format.weekday(day.date)).font(.system(size: 10, weight: .semibold)).foregroundStyle(selected ? .primary : .secondary)
+                                ZStack {
+                                    Ring(progress: (day.steps ?? 0) / (day.stepGoal ?? 8000), tint: Palette.activity, lineWidth: 3.5)
+                                    Text(Format.dayNumber(day.date)).font(.system(size: 13, weight: .semibold, design: .rounded)).monospacedDigit()
+                                }
+                                .frame(width: 34, height: 34)
+                            }
+                            .padding(.vertical, 8).padding(.horizontal, 8)
+                            .background(selected ? Color.white.opacity(0.09) : .clear, in: RoundedRectangle(cornerRadius: 12, style: .continuous))
+                            .overlay(RoundedRectangle(cornerRadius: 12, style: .continuous).strokeBorder(selected ? Palette.hairline : .clear))
+                            .contentShape(Rectangle())
+                        }
+                        .buttonStyle(.plain)
+                        .id(day.date)
+                        .help(Format.longDay(day.date))
+                    }
                 }
             }
+            .onAppear { proxy.scrollTo(store.selectedDate, anchor: .trailing) }
+            .onChange(of: store.selectedDate) { proxy.scrollTo(store.selectedDate) }
         }
     }
-    private var subtitle: String {
-        switch selection ?? .overview {
-        case .overview: "A closer look at the data your strap shares with Zepp."
-        case .heart: "Heart rate and stress are separate measurements. Stress is not HRV."
-        case .sleep: "Sleep is shown on the cloud record's date, often the night you fell asleep."
-        case .activity: "Daily movement and the training fields returned by your account."
-        case .cloud: "Downloaded responses, including fields we have not decoded yet."
-        case .connection: "Direct access to Zepp. No third-party server."
-        }
-    }
-    private var selectors: some View {
-        HStack(spacing: 20) {
-            Picker("Band date", selection: $store.selectedDate) {
-                ForEach(Array((store.snapshot?.dates ?? []).reversed()), id: \.self) { Text($0).tag($0) }
-            }.frame(maxWidth: 220)
-            Picker("Device", selection: $store.selectedSource) {
-                ForEach(store.snapshot?.sources ?? [], id: \.self) { Text($0).tag($0) }
-            }.frame(maxWidth: 320)
-            Spacer()
-        }.onChange(of: store.selectedSource) { if store.day == nil { store.selectLatest() } }
-    }
-    private var welcome: some View {
-        VStack(alignment: .leading, spacing: 24) {
-            Image(systemName: "waveform.path.ecg").font(.system(size: 54, weight: .light)).foregroundStyle(.mint)
-            Text("Your Helio Strap.\nA little more room to see it.").font(.system(size: 34, weight: .medium))
-            Text("Sync your strap with Zepp on your iPhone, then connect your Zepp account here. Helio downloads the cloud records and keeps a local copy for offline viewing.")
-                .foregroundStyle(.secondary).frame(maxWidth: 590, alignment: .leading)
-            HStack {
-                Button("Connect Zepp account") { store.showConnection = true }.buttonStyle(.borderedProminent).controlSize(.large)
-                Button("Try sample data") { store.showDemo() }.controlSize(.large)
+}
+
+private struct WelcomeView: View {
+    @Bindable var store: AppStore
+    var body: some View {
+        VStack(alignment: .leading, spacing: 22) {
+            ZStack {
+                Circle().fill(Palette.heart.opacity(0.12)).frame(width: 120).offset(x: -26, y: 10)
+                Circle().fill(Palette.sleep.opacity(0.14)).frame(width: 100).offset(x: 40, y: -14)
+                Circle().fill(Palette.activity.opacity(0.12)).frame(width: 80).offset(x: 34, y: 42)
+                Image(systemName: "waveform.path.ecg").font(.system(size: 50, weight: .semibold)).foregroundStyle(Palette.accent)
             }
-            Divider().padding(.vertical, 8)
-            Notice(title: "Unofficial cloud connection", message: "Zepp does not provide a documented public Helio account API. This app uses community-documented endpoints, which can change. Your password goes to Zepp's website, not Helio. HRV, readiness, SpO₂, and respiratory rate do not yet have a verified data route here.", symbol: "info.circle", color: .mint)
-        }.padding(30).frame(maxWidth: .infinity, alignment: .leading)
-            .background(Color(nsColor: .controlBackgroundColor), in: RoundedRectangle(cornerRadius: 16))
+            .frame(width: 180, height: 140, alignment: .center)
+            Text("Your Helio Strap,\non a bigger screen.").font(.system(size: 36, weight: .bold))
+            Text("Sync the strap with Zepp on your iPhone, then connect your Zepp account here. Helio downloads heart rate, sleep, stress, steps, and workouts, and keeps a private copy on this Mac.")
+                .font(.title3).foregroundStyle(.secondary).frame(maxWidth: 620, alignment: .leading)
+            HStack(spacing: 12) {
+                Button("Connect Zepp account") { store.showConnection = true }.buttonStyle(.borderedProminent).controlSize(.large)
+                Button("Explore sample data") { store.showDemo() }.controlSize(.large)
+            }
+            Banner(title: "Unofficial connection", message: "Zepp doesn't publish an API for the Helio Strap. Helio uses community-documented endpoints that may change. Your password goes to Zepp's website, never to Helio.")
+                .frame(maxWidth: 680)
+        }
+        .padding(36)
+        .frame(maxWidth: .infinity, alignment: .leading)
+        .background(Palette.card, in: RoundedRectangle(cornerRadius: 22, style: .continuous))
+        .overlay(RoundedRectangle(cornerRadius: 22, style: .continuous).strokeBorder(Palette.hairline))
     }
 }

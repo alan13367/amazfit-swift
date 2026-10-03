@@ -10,7 +10,7 @@ This is an independent, experimental app. Zepp does not publish a supported cons
 ./scripts/run.sh
 ```
 
-This builds, locally signs, and opens `.build/Helio.app`. Try **Explore sample data** before connecting. Sample data is clearly labeled and never saved as your real dataset.
+This builds, locally signs, and opens `.build/Helio.app`. Try **Explore sample data** before connecting; it shows two weeks of synthetic data. Sample data is clearly labeled and never saved as your real dataset.
 
 To build an optimized local app:
 
@@ -51,19 +51,18 @@ Use the toolbar to download the last 7, 14, or 30 days. Downloads are manual and
 
 | Data | Current display |
 | --- | --- |
-| Heart rate | Minute-by-minute chart, minimum, maximum, and sample average |
-| Resting heart rate | The value in the daily sleep summary, when present |
-| Sleep | Score, known sleep-stage durations, stage timeline, start/end window, decoded summary including nap fields |
-| Steps, distance, calories | Daily cloud summary and a steps chart |
-| Stress | Account-level timeline, separate from HRV |
-| Training load | Account-level ATL, CTL, and TSB chart and latest values |
-| Training impulse, sport load, VO₂ max | Raw responses until their fields are checked against real account data |
-| Workout history | Experimental raw response. Format and pagination are not verified |
-| Unknown fields | Raw endpoint responses and decoded daily summaries in All cloud fields; JSON export |
+| Today | Steps, sleep score, resting heart rate, and stress at a glance; the day's heart rate with sleep and workouts shaded; last night's stages; steps by hour; workouts; training load; trends across the downloaded range |
+| Heart rate | Minute-by-minute chart with hover, resting/average/lowest/highest, the device's peak reading, time in zones for the whole day, heart rate while asleep, daily range and resting trends |
+| Sleep | Score, time asleep, in-bed window, wake-ups, efficiency, a hoverable stage timeline, sleeping heart rate, stage breakdown, nightly history |
+| Stress | 5-minute readings colored by level, average/low/high, time at each level, daily averages |
+| Activity | Steps against your goal, distance, calories, active time, steps per hour (decoded from the per-minute record), detected walks and runs, daily steps |
+| Workouts | History plus a detail view: duration, distance, pace, cadence, stride, calories, average/max heart rate, heart rate over your zones, time in zones, training effect, exercise load, perceived effort, and strength sets |
+| Training load | 7-day load against Zepp's optimal range |
+| Unknown fields | Raw endpoint responses and decoded daily summaries in Raw data; JSON export |
 
 Not every endpoint returns data for every account. Missing measurements say "Not available", not zero. Heart-rate charts preserve minute indexes and do not join lines across missing samples. Sleep duration excludes awake stages; the start/end window is shown separately because it can include awake time. Cloud sleep records can be assigned to the date you fell asleep, so inspect the previous date when looking for last night's sleep.
 
-Band charts are filtered to the selected device identifier. Stress and training endpoints are account-level and may include your other Zepp devices. Identifiers are not yet resolved to friendly device names.
+Band charts are filtered to the selected device. Stress, workout, and training endpoints are account-level and may include your other Zepp devices. Sleep stages are placed using the record's reported start time; in real Helio records a night is filed under the morning it ended. Workout field meanings (sport type, zone limits, training effect scale) were checked against a real Helio record but are not documented by Zepp.
 
 **HRV, BioCharge/readiness, SpO₂, and respiratory rate do not have verified endpoint mappings in this version.** Stress is not shown as HRV. The app does not invent recovery scores. This is not medical software.
 
