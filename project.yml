@@ -1,0 +1,64 @@
+name: Helio
+options:
+  deploymentTarget:
+    macOS: '14.0'
+settings:
+  base:
+    SWIFT_VERSION: '6.0'
+    MACOSX_DEPLOYMENT_TARGET: '14.0'
+    CODE_SIGN_IDENTITY: '-'
+    CODE_SIGN_STYLE: Manual
+    ENABLE_USER_SCRIPT_SANDBOXING: YES
+targets:
+  HelioCore:
+    type: framework
+    platform: macOS
+    sources: [Sources/HelioCore]
+    settings:
+      base:
+        PRODUCT_BUNDLE_IDENTIFIER: dev.helio.core
+        GENERATE_INFOPLIST_FILE: YES
+  Helio:
+    type: application
+    platform: macOS
+    sources:
+      - path: Sources/HelioApp
+      - path: Support/Helio.icns
+        buildPhase: resources
+    settings:
+      base:
+        INFOPLIST_FILE: Support/Info.plist
+        PRODUCT_BUNDLE_IDENTIFIER: dev.helio.mac
+        PRODUCT_NAME: Helio
+        ENABLE_APP_SANDBOX: NO
+        ENABLE_HARDENED_RUNTIME: YES
+    dependencies:
+      - target: HelioCore
+        embed: true
+  HelioCoreTests:
+    type: bundle.unit-test
+    platform: macOS
+    sources: [Tests/HelioCoreTests]
+    settings:
+      base:
+        PRODUCT_BUNDLE_IDENTIFIER: dev.helio.core-tests
+        GENERATE_INFOPLIST_FILE: YES
+    dependencies:
+      - target: HelioCore
+  HelioAppTests:
+    type: bundle.unit-test
+    platform: macOS
+    sources: [Tests/HelioAppTests]
+    settings:
+      base:
+        PRODUCT_BUNDLE_IDENTIFIER: dev.helio.app-tests
+        GENERATE_INFOPLIST_FILE: YES
+    dependencies:
+      - target: Helio
+schemes:
+  Helio:
+    build:
+      targets:
+        Helio: all
+    test:
+      targets: [HelioCoreTests, HelioAppTests]
